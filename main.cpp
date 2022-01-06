@@ -2,28 +2,20 @@
 
 
 
-#ifdef linux
+/*#ifdef linux
 #include <sys/socket.h>
     #include <netinet/in.h>
 	#include <netdb.h>
+    #include <unistd.h>
+    #include <stdio.h>
 #endif
 
 #ifdef _WIN32
-#include <WS2tcpip.h>
-/*
-    #pragma comment(lib,"ws2_32")
-    #include <WinSock2.h>
-
-    #include <Windows.h>
-    #include <ws2def.h>
-    #include <io.h>
-    #include <sys/types.h>*/
-#define bzero(b,len) (memset((b), '\0', (len)), (void) 0)
-#define bcopy(b1,b2,len) (memmove((b2), (b1), (len)), (void) 0)
+    #include <WS2tcpip.h>
+    #define bzero(b,len) (memset((b), '\0', (len)), (void) 0)
+    #define bcopy(b1,b2,len) (memmove((b2), (b1), (len)), (void) 0)
 #endif
 
-#include <unistd.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <iostream>
@@ -34,10 +26,17 @@
 
 void* server(void*);
 void* client(void*);
+*/
+
+#include "include/nt/udpSocket.h"
 
 int main() {
 
-    pthread_t thread[N_THREAD];
+    nt::UdpSocket udpSocket(nt::ConnectionInterface::ALL);
+    udpSocket.connect("localhost", 2804);
+    udpSocket.close();
+
+    /*pthread_t thread[N_THREAD];
     int porta = PORT;
     pthread_attr_t attr;
     pthread_attr_init(&attr);
@@ -54,14 +53,20 @@ int main() {
      for(int i = 0; i < N_THREAD; i++){
          pthread_join(thread[i], NULL);
          std::cout<<"[Main] : Thread "<<i<<" terminato.\n";
-     }
+     }*/
 
+    /*nt::Host host("sossiogll");
+
+    std::cout<<host;
+
+    host.start();
+*/
     return 0;
 
 }
 
 
-void error(const char* msg)
+/*void error(const char* msg)
 {
     perror(msg);
     #ifdef _WIN32
@@ -215,4 +220,4 @@ void* client(void* arg)
 
     std::cout << "[Client] : Socket chiusa. Terminazione.\n";
     pthread_exit(0);
-}
+}*/

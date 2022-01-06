@@ -1,2 +1,2 @@
-# network_tools
-A native cross-platform network tools implementation for discover and share data across the newtork.
+# network-tool
+Simple tool for scanning and connecting to an host on any available networks.

@@ -1,0 +1,158 @@
+//
+// Created by Sossio Giallaurito on 21/09/2021.
+//
+
+#ifndef NETWORK_TOOLS_HOST_H_OLD
+#define NETWORK_TOOLS_HOST_H_OLD
+
+#ifdef linux
+    #include <sys/socket.h>
+    #include <netinet/in.h>
+	#include <netdb.h>
+    #include <stdio.h>
+#endif
+
+#ifdef _WIN32
+    #include <WS2tcpip.h>
+#endif
+
+#include "config.h"
+#include <cstdlib>
+#include <cstring>
+#include <iostream>
+#include <string>
+#include <pthread.h>
+#include <list>
+#include <string>
+#include <unistd.h>
+
+
+namespace nt {
+
+    struct HostStatus {
+        std::string name;
+        sockaddr_in hostSocketSettings;
+        bool isConnected;
+    };
+
+    enum ConnectionInterface {
+        ALL = INADDR_ANY,
+        LOCALHOST = INADDR_LOOPBACK,
+        DefaultCI = DEFAULT_CONNECTION_INTERFACE
+    };
+
+    enum ConnectionProtocol {
+        DefaultCP = DEFAULT_CONNECTION_PROTOCOL,
+        UDP = SOCK_DGRAM,
+        TCP = SOCK_STREAM
+    };
+
+    enum NetworkProtocol {
+        DefaultNP = DEFAULT_NETWORK_PROTOCOL,
+        IPV6 = AF_INET6,
+        IPV4 = AF_INET
+    };
+
+
+
+    class Host {
+
+
+
+        struct listenerArgs{
+            std::list<HostStatus>* networkStatus;
+            int defaultListenerPort;
+            sockaddr_in* listenerSocketSettings;
+            int *listenerSocketID;
+            bool* keepListening;
+        };
+
+    public:
+
+        //Constructors
+        Host(std::string);
+
+        friend std::ostream& operator<< (std::ostream&, const Host&);
+
+        void updateNetworkInformation();
+        void connect(Host);
+        void disconnect(Host);
+        //void send(Host);
+        void initListener(); //Initlistener with default settings
+        void initListener(ConnectionInterface connectionInterface, int port, int backlog);
+        void stopListener();
+
+        bool start();
+
+        //Public getter
+        NetworkProtocol getDefaultNetworkProtocol() const;
+        ConnectionProtocol getDefaultConnectionProtocol() const;
+        ConnectionInterface getDefaultConnectionInterface() const;
+        int getDefaultListenerPort() const;
+        int getDefaultListenerBacklog() const;
+        std::list<HostStatus> * getNetworkStatus();
+
+        NetworkProtocol getCurrentNetworkProtocol() const;
+        int getCurrentListenerPort() const;
+        int getCurrentListenerBacklog() const;
+        ConnectionInterface getCurrentConnectionInterface() const;
+
+
+    private:
+
+        //Default settings
+        int* defaultListenerPort;
+        int* defaultListenerBacklog;
+        ConnectionProtocol* defaultConnectionProtocol;
+        NetworkProtocol* defaultNetworkProtocol;
+        ConnectionInterface* defaultConnectionInterface;
+
+        //Current settings
+        int* currentListenerPort;
+        int* currentListenerBacklog;
+        ConnectionProtocol* currentConnectionProtocol;
+        NetworkProtocol* currentNetworkProtocol;
+        ConnectionInterface* currentConnectionInterface;
+
+
+        //Status
+        int* openSockets;
+        int* listenerSocketID;
+        std::list<HostStatus> *networkStatus;
+        bool* keepListening;
+        sockaddr_in* listenerSocketSettings;
+        HostStatus* hostStatus;
+
+
+        //Private getters
+        sockaddr_in* getListenerSocketSettings();
+        int* getListenerSocketID();
+
+        //Private setters
+        void setListenerSocketID(int);
+        void setListenerSocketSettings(sockaddr_in);
+        void setListenerSocketSettings(ConnectionProtocol, ConnectionInterface, int);
+
+
+        void setCurrentListenerBacklog(int);
+        void setCurrentConnectionInterface(ConnectionInterface);
+        void setCurrentListenerPort(int);
+        void setCurrentNetworkProtocol(NetworkProtocol);
+
+
+        //Threads
+        static void* listenerThread(void*);
+
+        //Utilities
+        int initSocket(sockaddr_in*, NetworkProtocol, ConnectionProtocol, ConnectionInterface, int, int, bool, bool); //Inizializza socket con i parametri specificati per ogni interfaccia
+        bool isConnected(std::string);
+        void closeSocket(int*);
+        void setSocketSettings(sockaddr_in**, ConnectionProtocol, ConnectionInterface, int);
+        void setSocketSettings(sockaddr_in** destinationSocketSettings, sockaddr_in originSocketSettings);
+        static void error(const char* msg);
+
+
+    };
+}
+
+#endif //NETWORK_TOOLS_HOST_H_OLD

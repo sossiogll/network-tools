@@ -1,0 +1,467 @@
+//
+// Created by Sossio Giallaurito on 21/09/2021.
+//
+
+#include "../../include/nt/host.h.old"
+
+namespace nt {
+
+
+    Host::Host(std::string hostName) {
+
+        this->keepListening = new bool ;
+        this->networkStatus = new std::list<HostStatus>;
+        this->openSockets = new int;
+        this->hostStatus = new HostStatus;
+
+        *this->openSockets = 0;
+        *this->keepListening = true;
+        this->hostStatus->isConnected = false;
+        this->hostStatus->name = hostName;
+
+        this->listenerSocketSettings = NULL;
+        this->listenerSocketID = NULL;
+
+        this->defaultConnectionProtocol = NULL;
+        this->defaultConnectionInterface = NULL;
+        this->defaultNetworkProtocol = NULL;
+        this->defaultListenerPort = NULL;
+
+        this->currentListenerBacklog = NULL;
+        this->currentConnectionInterface = NULL;
+        this->currentNetworkProtocol = NULL;
+        this->currentListenerPort = NULL;
+        this->currentConnectionProtocol = NULL;
+
+
+    }
+
+    int Host::initSocket(
+        sockaddr_in* socketSettings,
+        NetworkProtocol networkProtocol,
+        ConnectionProtocol connectionProtocol,
+        ConnectionInterface connectionInterface,
+        int port,
+        int backlog,
+        bool isBroadcast,
+        bool isListener
+        ) {
+
+            int iResult;
+            int bindReturn;
+            int* socketID;
+
+
+            socketID = new int;
+
+            if(connectionProtocol == ConnectionProtocol::UDP && networkProtocol == NetworkProtocol::IPV6)
+                error("Il protocollo UDP non supporta IPV6!.");
+
+            #ifdef WIN32
+                    // Initialize Winsock
+                    WSADATA wsaData;
+                    iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
+                    if (iResult != 0) {
+                        std::cout<<"[Server] : WSAStartup failed: " << iResult;
+                    }
+            #endif
+
+            //Creazione socket
+            *socketID = socket(networkProtocol, connectionProtocol,0);
+            if(*socketID < 0) {
+                error("[Server] : ERROR opening socket in server. ");
+                this->closeSocket(socketID);
+            }
+
+            //Preparazione sockaddr_in per il binding
+            setSocketSettings(&socketSettings, connectionProtocol, connectionInterface, port);
+
+
+
+            if(isListener){
+                //Binding e verifica
+                bindReturn = bind(*socketID, (struct sockaddr*)socketSettings, sizeof(sockaddr));
+
+                if ( bindReturn < 0 )
+                    error("[Server] : ERROR on binding in server.");
+
+                if(connectionProtocol == ConnectionProtocol::TCP)
+                    listen(*socketID, backlog);
+            }
+            else if(isBroadcast){
+                int optval = 1;
+                int socketid = *socketID;
+                socklen_t optlen;
+                getsockopt(socketid, SOL_SOCKET, SO_BROADCAST, (char *)&optval, &optlen);
+                getsockopt(socketid, SOL_SOCKET, SO_REUSEADDR, (char *)&optval, &optlen);
+                if (optval == 0) {
+                    error("Can't enable SO_BROADCAST on socket!\n");
+                }
+            }
+
+
+
+            return *socketID;
+    }
+
+        void Host::initListener() {
+            this->initListener(
+                this->getDefaultConnectionInterface(),
+                this->getDefaultListenerPort(),
+                this->getDefaultListenerBacklog()
+            );
+        }
+
+        void Host::initListener(
+            ConnectionInterface connectionInterface,
+            int listenerPort,
+            int listenerBacklog) {
+
+                int listenerSocketID;
+                pthread_t listener;
+                pthread_attr_t attr;
+                listenerArgs* la;
+
+                this->closeSocket(this->getListenerSocketID());
+                this->setCurrentListenerBacklog(listenerBacklog);
+                this->setCurrentListenerPort(listenerPort);
+                this->setCurrentConnectionInterface(connectionInterface);
+                this->listenerSocketSettings = new sockaddr_in;
+
+                listenerSocketID = initSocket(
+                    this->getListenerSocketSettings(),
+                    NetworkProtocol::IPV4,
+                    ConnectionProtocol::UDP,
+                    this->getCurrentConnectionInterface(),
+                    this->getCurrentListenerPort(),
+                    this->getCurrentListenerBacklog(),
+                    true,
+                    false);
+
+                this->setListenerSocketID(listenerSocketID);
+                *keepListening = true;
+
+                pthread_attr_init(&attr);
+                pthread_attr_setdetachstate(&attr,PTHREAD_CREATE_JOINABLE);
+
+                la = new listenerArgs;
+                la->keepListening = this->keepListening;
+                la->listenerSocketSettings = this->getListenerSocketSettings();
+                la->defaultListenerPort = this->getDefaultListenerPort();
+                la->networkStatus = this->getNetworkStatus();
+                la->listenerSocketID = this->getListenerSocketID();
+
+                if (!pthread_create(&listener, &attr, listenerThread, la)) {
+                    std::cout << "[Main] : Server creato\n";
+                }
+
+                pthread_join(listener, NULL);
+
+                std::cout<<"Processo d'ascolto inizializzato.\n";
+    }
+
+
+    void* Host::listenerThread(void* args){
+
+        listenerArgs* la;
+        int n;
+        char buffer[256];
+
+        if(args!=NULL){
+
+            listenerArgs* la = (listenerArgs*)args;
+
+            n = sendto(*la->listenerSocketID, buffer, sizeof(buffer), 0,(sockaddr *)(la->listenerSocketSettings), sizeof(*la->listenerSocketSettings));
+            if (n < 0)
+                error("[Client] : ERROR writing to socket");
+            else
+                std::cout << "[Client] : Messaggio inviato correttamente.\n";
+
+            while(*la->keepListening){
+
+                n = recv(*la->listenerSocketID, buffer, 255, 0);
+                if (n < 0)
+                    error("[Client] : ERROR reading from socket");
+                else
+                    std::cout<< "[Client] : Messaggio ricevuto dal server: '"<<buffer<<"'.\n";
+                std::cout<<"Numero di host nella rete:"<<la->networkStatus->size()<<".\n";
+            }
+
+        }
+
+    }
+
+
+    bool Host::start() {
+
+        this->initListener();
+
+        return false;
+    }
+
+
+    void Host::error(const char* msg)
+    {
+
+            #ifdef _WIN32
+                std::cout<< msg << " Error code " <<  WSAGetLastError() <<".\n";
+            #else
+                perror(msg);
+            #endif
+        exit(1);
+    }
+
+    int* Host::getListenerSocketID(){
+
+        return this->listenerSocketID;
+    }
+
+    int Host::getDefaultListenerPort() const {
+
+        int defaultListeningPort;
+
+        if(this->defaultListenerPort != NULL)
+            defaultListeningPort = *this->defaultListenerPort;
+        else
+            defaultListeningPort = DEFAULT_LISTENER_PORT;
+
+        return defaultListeningPort;
+
+    }
+
+    int Host::getDefaultListenerBacklog() const {
+
+        int defaultBacklog;
+
+        if(this->defaultListenerBacklog != NULL)
+            defaultBacklog = *this->defaultListenerBacklog;
+        else
+            defaultBacklog = DEFAULT_LISTENER_BACKLOG;
+
+        return defaultBacklog;
+
+    }
+
+    NetworkProtocol Host::getDefaultNetworkProtocol() const {
+
+        NetworkProtocol networkProtocol;
+
+        if(this->defaultNetworkProtocol != NULL)
+            networkProtocol = *this->defaultNetworkProtocol;
+        else
+            networkProtocol = NetworkProtocol::DefaultNP;
+
+        return networkProtocol;
+
+    }
+
+    ConnectionProtocol Host::getDefaultConnectionProtocol() const {
+        ConnectionProtocol connectionProtocol;
+
+        if(this->defaultNetworkProtocol != NULL)
+            connectionProtocol = *this->defaultConnectionProtocol;
+        else
+            connectionProtocol = ConnectionProtocol::DefaultCP;
+
+        return connectionProtocol;
+    }
+
+    sockaddr_in* Host::getListenerSocketSettings(){
+        return this->listenerSocketSettings;
+    }
+
+
+    void Host::setListenerSocketID(int listenerSocketID){
+
+        if(this->listenerSocketID == NULL)
+            this->listenerSocketID = new int;
+
+        *this->listenerSocketID = listenerSocketID;
+
+    }
+
+    std::ostream& operator<< (std::ostream& ostream, Host const& host)
+    {
+
+        std::string defaultNetworkProtocolName;
+        std::string defaultConnectionProtocolName;
+
+        switch(host.getDefaultNetworkProtocol()){
+            case IPV4:
+                defaultNetworkProtocolName = "IPV4";
+                break;
+            case IPV6:
+                defaultNetworkProtocolName = "IPV6";
+                break;
+        }
+
+        switch(host.getDefaultConnectionProtocol()){
+
+            case TCP:
+                defaultConnectionProtocolName = "TCP";
+                break;
+            case UDP:
+                defaultConnectionProtocolName = "UDP";
+                break;
+        }
+
+        ostream << "Protocol Version: " << PROJECT_VERSION << "\n";
+        ostream << "Default network protocol: " << defaultNetworkProtocolName <<" (val: "<<host.getDefaultNetworkProtocol()<< ")\n";
+        ostream << "Default connection protocol: " << defaultConnectionProtocolName <<" (val: "<<host.getDefaultConnectionProtocol()<< ")\n";
+        ostream << "Default Listener Port: " << host.getDefaultListenerPort() << "\n";
+        return ostream;
+    }
+
+    void Host::setListenerSocketSettings(sockaddr_in listenerSocketSettings) {
+
+        setSocketSettings(&this->listenerSocketSettings, listenerSocketSettings);
+
+    }
+
+    void Host::setListenerSocketSettings(ConnectionProtocol connectionProtocol, ConnectionInterface connectionInterface, int port) {
+
+        setSocketSettings(&this->listenerSocketSettings, connectionProtocol, connectionInterface, port);
+
+    }
+
+    void Host::setSocketSettings(sockaddr_in** destinationSocketSettings, ConnectionProtocol connectionProtocol, ConnectionInterface connectionInterface, int port){
+
+        sockaddr_in* tempSocketSettings;
+
+        if(*destinationSocketSettings == NULL)
+            *destinationSocketSettings = new sockaddr_in;
+
+        tempSocketSettings = *destinationSocketSettings;
+
+        tempSocketSettings->sin_family = connectionProtocol;
+        tempSocketSettings->sin_addr.s_addr = htonl(connectionInterface);
+        tempSocketSettings->sin_port = htons(port);
+        this->setSocketSettings(destinationSocketSettings, *tempSocketSettings);
+    }
+
+    void Host::setSocketSettings(sockaddr_in** destinationSocketSettings, sockaddr_in originSocketSettings){
+
+        sockaddr_in* tempSocketSettings;
+
+        if(destinationSocketSettings == NULL)
+            *destinationSocketSettings = new sockaddr_in;
+
+        tempSocketSettings = *destinationSocketSettings;
+
+        memcpy(tempSocketSettings, &originSocketSettings, sizeof(sockaddr_in));
+    }
+
+    void Host::closeSocket(int* socketID) {
+
+        if(socketID!=NULL) {
+
+            #ifdef _WIN32
+                closesocket(*socketID);
+                WSACleanup();
+
+            #else
+                close(*socketID);
+            #endif
+
+            delete socketID;
+        }
+    }
+
+    int Host::getCurrentListenerPort() const {
+
+        int currentListenerPort;
+
+        if(this->currentListenerPort != NULL)
+            currentListenerPort = *this->currentListenerPort;
+        else
+            currentListenerPort = this->getDefaultListenerPort();
+
+        return currentListenerPort;
+    }
+
+    int Host::getCurrentListenerBacklog() const {
+
+        int currentListenerBacklog;
+
+        if(this->currentListenerBacklog != NULL)
+            currentListenerBacklog = *this->currentListenerBacklog;
+        else
+            currentListenerBacklog = this->getDefaultListenerBacklog();
+
+        return currentListenerBacklog;
+    }
+
+    ConnectionInterface Host::getDefaultConnectionInterface() const {
+
+        ConnectionInterface defaultConnectionInterface;
+
+        if(this->defaultConnectionInterface != NULL)
+            defaultConnectionInterface = *this->defaultConnectionInterface;
+        else
+            defaultConnectionInterface = ConnectionInterface::DefaultCI;
+
+        return defaultConnectionInterface;
+    }
+
+    void Host::setCurrentNetworkProtocol(NetworkProtocol currentNetworkProtocol) {
+
+        if(this->currentNetworkProtocol==NULL)
+            this->currentNetworkProtocol = new NetworkProtocol;
+
+        *this->currentNetworkProtocol = currentNetworkProtocol;
+    }
+
+    ConnectionInterface Host::getCurrentConnectionInterface() const {
+
+        ConnectionInterface currentConnectionInterface;
+        if (this->currentConnectionInterface != NULL)
+            currentConnectionInterface = *this->currentConnectionInterface;
+        else
+            currentConnectionInterface = this->getDefaultConnectionInterface();
+
+        return currentConnectionInterface;
+
+    }
+
+    void Host::setCurrentListenerBacklog(int currentListenerBacklog) {
+
+        if(this->currentListenerBacklog == NULL)
+            this->currentListenerBacklog = new int;
+        *this->currentListenerBacklog = currentListenerBacklog;
+
+    }
+
+    void Host::setCurrentListenerPort(int currentListenerBacklog) {
+
+        if(this->currentListenerBacklog == NULL)
+            this->currentListenerBacklog = new int;
+        *this->currentListenerBacklog = currentListenerBacklog;
+    }
+
+    void Host::setCurrentConnectionInterface(ConnectionInterface currentConnectionInterface) {
+
+        if(this->currentConnectionInterface == NULL)
+            this->currentConnectionInterface = new ConnectionInterface;
+        *this->currentConnectionInterface = currentConnectionInterface;
+    }
+
+    NetworkProtocol Host::getCurrentNetworkProtocol() const {
+
+        NetworkProtocol currentNetworkProtocol;
+        if (this->currentNetworkProtocol != NULL)
+            currentNetworkProtocol = *this->currentNetworkProtocol;
+        else
+            currentNetworkProtocol = this->getDefaultNetworkProtocol();
+
+        return currentNetworkProtocol;
+
+    }
+
+
+    std::list<HostStatus>* Host::getNetworkStatus() {
+        return this->networkStatus;
+    }
+
+}
+
+
