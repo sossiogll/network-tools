@@ -21,22 +21,21 @@
 #include <iostream>
 #include <string>
 #include <pthread.h>
+ */
+
 #define PORT 808028
 #define N_THREAD 2
 
 void* server(void*);
 void* client(void*);
-*/
+
 
 #include "include/nt/udpSocket.h"
+#include <pthread.h>
 
 int main() {
 
-    nt::UdpSocket udpSocket(nt::ConnectionInterface::ALL);
-    udpSocket.connect("localhost", 2804);
-    udpSocket.close();
-
-    /*pthread_t thread[N_THREAD];
+    pthread_t thread[N_THREAD];
     int porta = PORT;
     pthread_attr_t attr;
     pthread_attr_init(&attr);
@@ -46,36 +45,43 @@ int main() {
         std::cout << "[Main] : Server creato\n";
     }
 
-    if (!pthread_create(&thread[1], &attr, client, &porta)) {
+   if (!pthread_create(&thread[1], &attr, client, &porta)) {
         std::cout << "[Main] : Client creato\n";
     }
 
-     for(int i = 0; i < N_THREAD; i++){
+     for(int i = 0; i < 2; i++){
          pthread_join(thread[i], NULL);
          std::cout<<"[Main] : Thread "<<i<<" terminato.\n";
-     }*/
+     }
+    system("PAUSE");
 
-    /*nt::Host host("sossiogll");
-
-    std::cout<<host;
-
-    host.start();
-*/
     return 0;
 
 }
 
-
-/*void error(const char* msg)
+void* server(void* arg)
 {
-    perror(msg);
-    #ifdef _WIN32
-        std::cout << WSAGetLastError();
-    #endif
-    exit(1);
+    nt::UdpSocket udpSocket(nt::ConnectionInterface::ALL);
+    udpSocket.listen("localhost", "2804");
+    std::cout<<udpSocket;
+    udpSocket.receive();
+    udpSocket.close();
 
 }
 
+
+void* client(void*)
+{
+    char message[]="ciao";
+    sleep(1);
+    nt::UdpSocket udpSocket(nt::ConnectionInterface::ALL);
+    udpSocket.connectTo("127.0.0.1", "2804");
+    std::cout<<udpSocket;
+    udpSocket.send(message);
+    udpSocket.close();
+}
+
+/*
 void* server(void* arg)
 {
     int server_socket_id, client_socket_id, portno;

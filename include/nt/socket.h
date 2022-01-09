@@ -13,7 +13,10 @@
 #endif
 
 #ifdef _WIN32
-    #include <WS2tcpip.h>
+    #include <ws2tcpip.h>
+    #include <windows.h>
+    #define sleep(n) Sleep(n*1000)
+    #define usleep(n) Sleep(n/1000)
 #endif
 
 #include <iostream>
@@ -34,50 +37,55 @@ class Socket{
 
         char* getAddressToListen();
         char* getAddressToConnect();
-        int getPortToListen();
-        int getPortToConnect();
+        char* getPortToListen();
+        char* getPortToConnect();
 
         bool isConnected();
         bool isListening();
 
-        virtual int connect(char[], int) = 0;
-        virtual int listen(int) = 0;
+        virtual int connectTo(char*, char*) = 0;
+        virtual int listen(char*, char*) = 0;
         virtual int send(void*) = 0;
         virtual void* receive() = 0;
-        void close();
+        char * close();
+
+        virtual std::ostream& print(std::ostream&);
+        friend std::ostream& operator<<(std::ostream&, Socket&);
 
     protected:
 
         //Setters
-        void setPortToListen(int);
-        void setPortToConnect(int);
-        void setInSocket(nt::ConnectionProtocol, nt::ConnectionInterface);
-        void setOutSocket(const struct sockaddr_in*);
+        void setPortToListen(char*);
+        void setPortToConnect(char*);
+        void setAddressToListen(char*);
+        void setAddressToConnect(char*);
+        void setInSocketSettings(nt::ConnectionProtocol, nt::ConnectionInterface);
+        void setOutSocketSettings(nt::ConnectionProtocol, nt::ConnectionInterface);
+        void setOutSocketSettings(const struct addrinfo*);
+
         void setConnected(bool);
         void setListening(bool);
-        void setInSocketID(int);
-        void setOutSocketID(int);
+        void generateInSocket();
+        void generateOutSocket();
 
         //Getter
         int getInSocketID();
         int getOutSocketID();
-        const struct sockaddr_in* getInSocket();
-        const struct sockaddr_in* getOutSocket();
+        const struct addrinfo* getInSocket();
+        const struct addrinfo* getOutSocket();
 
-        //Socket tools
-        void bindInSocket();
     #ifdef WIN32
         void initWindowsSocket();
     #endif
 
 private:
 
-        int portToListen;
-        int portToConnect;
+        char* portToListen;
+        char* portToConnect;
         char* addressToListen;
         char* addressToConnect;
-        sockaddr_in* inSocket;
-        sockaddr_in* outSocket;
+        struct addrinfo* inSocket;
+        struct addrinfo* outSocket;
         int* inSocketID;
         int* outSocketID;
         bool connected;
@@ -86,8 +94,8 @@ private:
         //Private socket management tools
         void closeInSocket();
         void closeOutSocket();
-        void setSocketSettings(sockaddr_in*, nt::ConnectionProtocol, nt::ConnectionInterface, int);
-        void copySocketSettings(sockaddr_in *destinationSocketSettings, const struct sockaddr_in* originSocketSettings);
+        void setSocketSettings(struct addrinfo**, nt::ConnectionProtocol, nt::ConnectionInterface, const char*, const char*);
+        void copySocketSettings(struct addrinfo* destinationSocketSettings, const struct addrinfo* originSocketSettings);
 
 
 };

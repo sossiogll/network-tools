@@ -10,39 +10,33 @@ nt::UdpSocket::UdpSocket(ConnectionInterface connectionInterface) {
 
 }
 
-int nt::UdpSocket::connect(char[], int) {
+int nt::UdpSocket::connectTo(char* address, char* port) {
 
-
-    try {
-
-        #ifdef WIN32
-            this->initWindowsSocket();
-        #endif
-        this->setInSocketID( socket(NetworkProtocol::IPV4, ConnectionProtocol::UDP, 0) );
-    }
-    catch(nt::SocketErrorHandler e){
-        std::cout<<e.getDescription();
-    }
-
+    setPortToConnect(port);
+    setAddressToConnect(address);
+#ifdef WIN32
+    this->initWindowsSocket();
+#endif
+    this->setOutSocketSettings(ConnectionProtocol::UDP, this->connectionInterface);
+    this->generateOutSocket();
 }
 
 
-int nt::UdpSocket::listen(int portToListen){
+int nt::UdpSocket::listen(char* address, char* portToListen){
 
     if(this->isConnected())
         throw nt::SocketErrorHandler();
 
-    setPortToListen(portToListen);
-
     try {
 
+        setPortToListen(portToListen);
+        setAddressToListen(address);
 #ifdef WIN32
         this->initWindowsSocket();
 #endif
-        this->setInSocketID( socket(NetworkProtocol::IPV4, ConnectionProtocol::UDP, 0) );
-        this->setInSocket(ConnectionProtocol::UDP, this->connectionInterface);
-        this->bindInSocket();
-        this->setListening(true);
+        this->setInSocketSettings(ConnectionProtocol::UDP, this->connectionInterface);
+        this->generateInSocket();
+
     }
     catch(nt::SocketErrorHandler e){
         std::cout<<e.getDescription();
@@ -51,33 +45,29 @@ int nt::UdpSocket::listen(int portToListen){
     return 0;
 };
 
-int nt::UdpSocket::send(void *) {
+int nt::UdpSocket::send(void * message) {
 
     char hello[256] = "hello";
 
-    sendto(this->getInSocketID(), (const char *)hello, strlen(hello),
+    sendto(this->getOutSocketID(), (const char *)hello, strlen(hello),
            0, (const struct sockaddr *) this->getOutSocket(),
            sizeof(sockaddr));
 }
 
 void* nt::UdpSocket::receive() {
 
-    int n, len;
-    len = sizeof(sockaddr);
+    int n;
     char buffer[256];
-    sockaddr_in* outSocketTemp;
-    outSocketTemp = new sockaddr_in;
-    int outSocketIDTemp;
-
-    n = recvfrom( outSocketIDTemp, (char *)buffer, 256,
-                 MSG_WAITALL, ( struct sockaddr *) outSocketTemp, &len);
-
-    this->setInSocketID(outSocketIDTemp);
-    this->setOutSocket(outSocketTemp);
-
+    struct sockaddr_storage peer_addr;
+    socklen_t peer_addr_len = sizeof(peer_addr);
+    n=-1;
+    do {
+        n = recvfrom(getInSocketID(), buffer, 256, 0,
+                     (struct sockaddr *) &peer_addr, &peer_addr_len);
+    }while(n==-1);
     buffer[n] = '\0';
-    printf("Client : %s\n", buffer);
-
+    printf("Client : %s\n", *buffer);
+    return nullptr;
 };
 
 

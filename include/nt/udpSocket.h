@@ -19,14 +19,15 @@ namespace nt {
         UdpSocket(ConnectionInterface);
         //~UdpSocket();
 
-        int connect(char[], int);
-        int listen(int);
+        int connectTo(char[], char[]);
+        int listen(char[], char[]);
 
         int send(void*);
         void* receive();
 
     private:
         nt::ConnectionInterface connectionInterface;
+
     };
 
 }

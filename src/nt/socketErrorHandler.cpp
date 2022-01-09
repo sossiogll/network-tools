@@ -13,7 +13,11 @@ nt::SocketErrorHandler::SocketErrorHandler(int errorID){
 
 }
 
-const nt::socketError *nt::SocketErrorHandler::getDescription() const throw() {
-    return const_cast<socketError *>(&this->errorList[this->errorID]);
+const nt::SocketError nt::SocketErrorHandler::getDescription() const throw() {
+    return this->errorList[this->errorID];
 }
 
+std::ostream& nt::operator<<(std::ostream &os, nt::SocketError socketError) {
+    return os << "[Error " <<socketError.id << "] : " << socketError.description <<"\n";
+
+}

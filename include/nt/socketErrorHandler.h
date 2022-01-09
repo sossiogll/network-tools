@@ -5,25 +5,30 @@
 #ifndef NETWORK_TOOLS_SOCKETERRORHANDLER_H
 #define NETWORK_TOOLS_SOCKETERRORHANDLER_H
 
-
+#include <iostream>
 #include <exception>
 #include <vector>
 #include <string>
 
 namespace nt {
 
-    struct socketError {
+
+    struct SocketError {
+
+        friend std::ostream& operator<<(std::ostream &, nt::SocketError);
 
         int id;
         std::string description;
 
     };
 
+    std::ostream& operator<<(std::ostream &, nt::SocketError);
+
+
     class SocketErrorHandler : public std::exception {
 
-
     private:
-        const std::vector <socketError> errorList{
+        const std::vector <SocketError> errorList{
                 {
                     0,
                     "OK"
@@ -42,7 +47,7 @@ namespace nt {
     public:
 
         SocketErrorHandler(int errorID = 1);
-        const socketError* getDescription() const throw();
+        const SocketError getDescription() const throw();
 
 
 

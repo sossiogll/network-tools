@@ -14,8 +14,8 @@ Socket::Socket(){
     this->outSocket = nullptr;
     this->inSocketID = nullptr;
     this->outSocketID = nullptr;
-    this->portToListen = -1;
-    this->portToConnect = -1;
+    this->portToListen = nullptr;
+    this->portToConnect = nullptr;
 
 }
 
@@ -25,7 +25,7 @@ Socket::~Socket(){
 
 }
 
-void Socket::close() {
+char * Socket::close() {
 
     this->closeOutSocket();
     this->closeInSocket();
@@ -50,11 +50,12 @@ char* Socket::getAddressToConnect() {
     return this->addressToConnect;
 }
 
-int Socket::getPortToListen() {
+char* Socket::getPortToListen() {
+
     return this->portToListen;
 }
 
-int Socket::getPortToConnect() {
+char* Socket::getPortToConnect() {
     return this->portToConnect;
 }
 
@@ -62,39 +63,66 @@ char* Socket::getAddressToListen() {
     return addressToListen;
 }
 
-void Socket::setInSocket(nt::ConnectionProtocol connectionProtocol, nt::ConnectionInterface connectionInterface) {
+void Socket::setInSocketSettings(nt::ConnectionProtocol connectionProtocol, nt::ConnectionInterface connectionInterface) {
 
-    setSocketSettings(this->inSocket, connectionProtocol, connectionInterface, getPortToListen());
+    if(this->inSocket!= nullptr)
+        throw nt::SocketErrorHandler();
+
+    setSocketSettings(&this->inSocket, connectionProtocol, connectionInterface,getAddressToListen(), getPortToListen());
 
 }
 
-void Socket::setOutSocket(const struct sockaddr_in* originSocketSettings) {
+void Socket::setOutSocketSettings(const struct addrinfo* originSocketSettings) {
 
     copySocketSettings(this->outSocket, originSocketSettings);
 
 }
 
-void Socket::copySocketSettings(sockaddr_in *destinationSocketSettings, const struct sockaddr_in* originSocketSettings) {
+void Socket::setOutSocketSettings(nt::ConnectionProtocol connectionProtocol, nt::ConnectionInterface connectionInterface) {
+
+    if(this->outSocket!= nullptr)
+        throw nt::SocketErrorHandler();
+
+    setSocketSettings(&this->outSocket, connectionProtocol, connectionInterface, getAddressToConnect(), getPortToConnect());
+
+}
+
+void Socket::copySocketSettings(addrinfo* destinationSocketSettings, const struct addrinfo* originSocketSettings) {
 
 
     if(destinationSocketSettings == nullptr)
-        destinationSocketSettings = new sockaddr_in;
+        destinationSocketSettings = new addrinfo;
 
     memcpy(destinationSocketSettings, originSocketSettings, sizeof(sockaddr_in));
 
 }
 
-void Socket::setSocketSettings(sockaddr_in* destinationSocketSettings, nt::ConnectionProtocol connectionProtocol, nt::ConnectionInterface connectionInterface, int port) {
+void Socket::setSocketSettings(struct addrinfo** destinationSocketSettings,const nt::ConnectionProtocol connectionProtocol, const nt::ConnectionInterface connectionInterface, const char* address, const char* port) {
 
-    if(port <= 1)
+    int status;
+    struct addrinfo hints;
+    struct addrinfo *res;
+
+    if(port == nullptr)
         throw nt::SocketErrorHandler(2);
 
     if(destinationSocketSettings == nullptr)
         throw nt::SocketErrorHandler();
 
-    destinationSocketSettings->sin_family = connectionProtocol;
-    destinationSocketSettings->sin_addr.s_addr = htonl(connectionInterface);
-    destinationSocketSettings->sin_port = htons(port);
+    memset(&hints,0, sizeof(hints));
+    hints.ai_family = connectionProtocol;
+    hints.ai_socktype = connectionInterface;
+    hints.ai_flags = AI_PASSIVE;
+
+    status = getaddrinfo(address, port, &hints, &res);
+    if (status != 0)
+    {
+        fprintf(stderr, "getaddrinfo error: %s\n", gai_strerror(status));
+        fprintf(stderr, "strerror error %s\n", strerror(errno));
+        throw nt::SocketErrorHandler();
+    }
+
+    *destinationSocketSettings = res;
 
 }
 
@@ -119,39 +147,83 @@ void Socket::setListening(bool flag) {
 
 }
 
-void Socket::setPortToListen(int port) {
-    this->portToListen = port;
-}
+void Socket::setPortToListen(char* port) {
 
-void Socket::setPortToConnect(int port) {
-    this->portToConnect = port;
-}
-
-void Socket::setInSocketID(int socketID) {
-
-    if(socketID<0)
+    if(this->portToListen != nullptr)
         throw nt::SocketErrorHandler();
 
-    if(this->inSocketID != nullptr)
-        throw nt::SocketErrorHandler(); //
+    this->portToListen = new char[strlen(port)];
+    strcpy(this->portToListen, port);
+}
 
-    this->inSocketID = new int;
-    *this->inSocketID = socketID;
+void Socket::setPortToConnect(char* port) {
+    if(this->portToConnect != nullptr)
+        throw nt::SocketErrorHandler();
+
+    this->portToConnect = new char[strlen(port)];
+    strcpy(this->portToConnect, port);
 
 }
 
-void Socket::setOutSocketID(int socketID) {
+void Socket::generateInSocket() {
 
-    if(socketID<0)
-        throw nt::SocketErrorHandler(); //Errore nella creazione della socket, id non valido
+    int tempInSocketID;
+    struct addrinfo *rp;
 
-    if(this->outSocketID!= nullptr)
-        throw nt::SocketErrorHandler(); //Se si sta creando una nuova socket, non ci dovrebbe essere nessun altra attualmente istanziata
+    for (rp = this->inSocket; rp != NULL; rp = rp->ai_next) {
 
-    if(this->outSocketID == nullptr)
+        tempInSocketID = socket(this->inSocket->ai_family, this->inSocket->ai_socktype, this->inSocket->ai_protocol);
+
+        if (tempInSocketID == -1)
+            continue;
+
+        this->inSocketID = new int;
+        *this->inSocketID = tempInSocketID;
+
+        if (bind(*this->inSocketID, rp->ai_addr, rp->ai_addrlen) == 0) {
+            this->setListening(true);
+            break;                  /* Success */
+        }
+        closeInSocket();
+    }
+
+    if (this->inSocketID == nullptr) {               /* No address succeeded */
+        fprintf(stderr, "Could not connect\n");
+        throw nt::SocketErrorHandler();
+    }
+
+}
+
+void Socket::generateOutSocket() {
+
+    int tempOutSocketID;
+    struct addrinfo *rp;
+    int connectInfo = 0;
+
+    for (rp = this->outSocket; rp != NULL; rp = rp->ai_next) {
+
+        tempOutSocketID = socket(this->outSocket->ai_family, this->outSocket->ai_socktype, this->outSocket->ai_protocol);
+
+        if (tempOutSocketID == -1)
+            continue;
+
         this->outSocketID = new int;
+        *this->outSocketID = tempOutSocketID; /* Success */
 
-    *this->outSocketID = socketID;
+        break;
+        /*connectInfo = connect(*this->outSocketID, rp->ai_addr, rp->ai_addrlen);
+        if (connectInfo == 0) {
+            setConnected(true);
+            break;
+        }*/
+
+
+    }
+
+    if (this->outSocketID == nullptr) {               /* No address succeeded */
+        fprintf(stderr, "Could not connect\n");
+    }
+
 
 }
 
@@ -168,9 +240,12 @@ void Socket::initWindowsSocket() {
     }
 }
 
+#endif
+
+
 void Socket::closeInSocket() {
 
-    if(this->inSocketID!=nullptr) {
+    if(this->inSocket!=nullptr) {
 
 #ifdef _WIN32
         closesocket(*this->inSocketID);
@@ -181,7 +256,7 @@ void Socket::closeInSocket() {
 #endif
 
         delete this->inSocketID;
-        delete this->inSocket;
+        freeaddrinfo(inSocket);
         this->inSocketID = nullptr;
         this->inSocket = nullptr;
     }
@@ -190,7 +265,7 @@ void Socket::closeInSocket() {
 
 void Socket::closeOutSocket() {
 
-    if(this->outSocketID!=nullptr) {
+    if(this->outSocket!=nullptr) {
 
 #ifdef _WIN32
         closesocket(*this->outSocketID);
@@ -201,28 +276,21 @@ void Socket::closeOutSocket() {
 #endif
 
         delete this->outSocketID;
-        delete this->outSocket;
+        freeaddrinfo(inSocket);
         this->outSocketID = nullptr;
         this->outSocket = nullptr;
     }
 
 }
 
-void Socket::bindInSocket() {
-
-    if ( (bind(this->getInSocketID(), (sockaddr*)this->getInSocket(), sizeof(sockaddr))) != 0 )
-        throw nt::SocketErrorHandler();
-
-}
-
-    const struct sockaddr_in* Socket::getInSocket() {
+    const struct addrinfo* Socket::getInSocket() {
 
         if(this->inSocket == nullptr)
             throw nt::SocketErrorHandler();
         return this->inSocket;
     }
 
-    const struct sockaddr_in* Socket::getOutSocket() {
+    const struct addrinfo* Socket::getOutSocket() {
         if(this->outSocket == nullptr)
             throw nt::SocketErrorHandler();
         return this->outSocket;
@@ -240,7 +308,61 @@ int Socket::getOutSocketID() {
     return *this->outSocketID;
 }
 
+std::ostream &operator<<(std::ostream& os, Socket& socket) {
+    socket.print(os);
+    return os;
+}
 
-#endif
+std::ostream &Socket::print(std::ostream& os) {
+    char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
+    os<<"[Socket info]:\n";
+
+    if(isListening())
+    {
+        if (getnameinfo(this->inSocket->ai_addr, this->inSocket->ai_addrlen, hbuf, sizeof(hbuf), sbuf,
+                        sizeof(sbuf), NI_NUMERICHOST | NI_NUMERICSERV) == 0)
+            os<<"host: "<<hbuf<<"\nport: "<<sbuf;
+    }
+    else if(isConnected()){
+        if (getnameinfo(this->outSocket->ai_addr, this->outSocket->ai_addrlen, hbuf, sizeof(hbuf), sbuf,
+                        sizeof(sbuf), NI_NUMERICHOST | NI_NUMERICSERV) == 0)
+            os<<"host: "<<hbuf<<"\nport: "<<sbuf;
+    }else{
+        os<<"host: n.d.\nport: n.d.";
+    }
+
+
+    os<<"\n";
+
+    return os;
+}
+
+void Socket::setAddressToListen(char* address) {
+
+    if(this->addressToListen != nullptr)
+        throw nt::SocketErrorHandler();
+
+    if(address != NULL || address != nullptr) {
+        this->addressToListen = new char[strlen(address)];
+        strcpy(this->addressToListen, address);
+    }
+
+}
+
+void Socket::setAddressToConnect(char * address) {
+
+    if(this->addressToConnect != nullptr)
+        throw nt::SocketErrorHandler();
+
+    if(address != NULL || address != nullptr) {
+        this->addressToConnect = new char[strlen(address)+1];
+        strcpy(this->addressToConnect, address);
+        this->addressToConnect[strlen(address)]='\0';
+    }
+
+}
+
+
+
 
 

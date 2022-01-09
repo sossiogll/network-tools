@@ -11,7 +11,8 @@ namespace nt{
 
     enum NetworkProtocol {
         IPV6 = AF_INET6,
-        IPV4 = AF_INET
+        IPV4 = AF_INET,
+        ANY = AF_UNSPEC
     };
 
 }
